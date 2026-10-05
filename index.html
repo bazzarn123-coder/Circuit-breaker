@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Circuit Breaker: Verified Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-dark: #060911;
+            --panel-bg: #0d1527;
+            --panel-border: #1a2947;
+            --accent-cyan: #00f0ff;
+            --text-main: #f1f5f9;
+            --text-sub: #94a3b8;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            touch-action: manipulation;
+            margin: 0;
+            padding: 0;
+        }
+
+        .cyber-card {
+            background: rgba(13, 21, 39, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+
+        .cyber-modal-bg {
+            background: rgba(4, 7, 14, 0.98);
+            backdrop-filter: blur(16px);
+        }
+
+        .board-container {
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        @keyframes neon-pulse {
+            0% { box-shadow: 0 0 5px rgba(0, 240, 255, 0.2); }
+            50% { box-shadow: 0 0 20px rgba(0, 240, 255, 0.6); }
+            100% { box-shadow: 0 0 5px rgba(0, 240, 255, 0.2); }
+        }
+
+        .victory-glow {
+            animation: neon-pulse 1.8s infinite ease-in-out;
+        }
+
+        select option {
+            background: #0d1527;
+            color: #f1f5f9;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-2 sm:p-4">
+
+<!-- 1. SEQUENTIAL STATE OVERLAYS -->
+
+<!-- A. Initial Splash Screen Overlay -->
+<div id="splash-screen" class="fixed inset-0 z-[100] cyber-modal-bg flex flex-col items-center justify-center p-2 cursor-pointer" style="display: flex;">
+    <div class="w-full h-full flex items-center justify-center relative">
+        <img src="splash.jpg" alt="Circuit Breaker" class="max-w-full max-h-full object-contain" onerror="this.style.display='none'; document.getElementById('splash-fallback').style.display='flex';">
+        
+        <!-- Fallback if image path isn't found locally -->
+        <div id="splash-fallback" class="absolute inset-0 flex-col items-center justify-center p-6 text-center gap-6" style="display: none;">
+            <div class="text-3xl sm:text-5xl font-black text-cyan-400 tracking-wider drop-shadow-[0_0_15px_rgba(0,240,255,0.8)]">
+                ⚡ CIRCUIT BREAKER ⚡
+            </div>
+            <p class="text-sm sm:text-base text-slate-300 max-w-xs">
+                Connect All Terminals. Fill Every Square.<br>Mathematically Solvable.
+            </p>
+            <div class="bg-cyan-500 text-slate-950 font-black px-6 py-3 rounded-xl shadow-[0_0_20px_rgba(0,240,255,0.5)] animate-pulse">
+                START CHALLENGE ▶
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- B. Rules Modal -->
+<div id="rules-modal" class="fixed inset-0 cyber-modal-bg z-[90] flex items-center justify-center p-4" style="display: none;">
+    <div class="cyber-card w-full max-w-md rounded-2xl p-5 sm:p-6 flex flex-col gap-4 border border-cyan-500/30 shadow-[0_0_40px_rgba(0,240,255,0.15)]">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center gap-2">
+                <span class="text-2xl">⚡</span>
+                <h2 class="font-black text-lg sm:text-xl tracking-wide text-cyan-400">HOW TO PLAY</h2>
+            </div>
+            <button id="modal-close-x" class="text-slate-400 hover:text-cyan-300 text-xl font-bold px-2 cursor-pointer">&times;</button>
+        </div>
+
+        <div class="flex flex-col gap-3 text-xs sm:text-sm text-slate-300">
+            <div class="flex items-start gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                <span class="text-cyan-400 font-black text-base">1</span>
+                <div>
+                    <strong class="text-cyan-300 block mb-0.5">Connect Matching Ports</strong>
+                    Drag your finger or mouse between terminal rings of the exact same neon color.
+                </div>
+            </div>
+
+            <div class="flex items-start gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                <span class="text-cyan-400 font-black text-base">2</span>
+                <div>
+                    <strong class="text-cyan-300 block mb-0.5">Fill 100% of the Grid</strong>
+                    Every single cell on the board must be traversed by wires. No empty gaps permitted!
+                </div>
+            </div>
+
+            <div class="flex items-start gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                <span class="text-cyan-400 font-black text-base">3</span>
+                <div>
+                    <strong class="text-cyan-300 block mb-0.5">No Overlaps</strong>
+                    Wires cannot cross each other. Plan your space-filling path carefully.
+                </div>
+            </div>
+        </div>
+
+        <button id="modal-start-btn" class="w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-slate-950 font-black py-3 rounded-xl text-sm transition shadow-[0_0_20px_rgba(0,240,255,0.4)] cursor-pointer">
+            INITIALIZE GRID ⚡
+        </button>
+    </div>
+</div>
+
+<!-- 2. MAIN GAME INTERFACE -->
+
+<div class="w-full max-w-md cyber-card rounded-2xl p-3 sm:p-5 flex flex-col gap-3 shadow-2xl">
+    
+    <!-- Top Header & Info / Level Select -->
+    <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <div>
+            <div class="flex items-center gap-1.5">
+                <span class="text-lg">⚡</span>
+                <h1 class="font-extrabold text-base sm:text-lg tracking-wide text-cyan-400">CIRCUIT BREAKER</h1>
+            </div>
+            <p class="text-[10px] text-slate-400 font-medium">VERIFIED EDITION • 100% SOLVABLE</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <!-- Info Button -->
+            <button id="info-btn" class="bg-slate-900 hover:bg-slate-800 text-cyan-400 border border-slate-700/60 rounded-xl w-8 h-8 flex items-center justify-center font-bold text-sm shadow transition cursor-pointer" title="Game Rules">
+                ℹ
+            </button>
+
+            <!-- Direct Level Selector -->
+            <div class="flex items-center gap-1 bg-slate-900 border border-slate-700/60 rounded-xl px-2 py-1">
+                <label for="level-select" class="text-[10px] text-slate-400 font-bold uppercase">LVL</label>
+                <select id="level-select" class="bg-transparent text-cyan-300 font-extrabold text-xs focus:outline-none cursor-pointer">
+                    <!-- Populated via JS -->
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats & Progress Display -->
+    <div class="grid grid-cols-3 gap-2 text-center">
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2">
+            <div class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Grid Size</div>
+            <div id="grid-size-label" class="text-xs sm:text-sm font-black text-slate-200">6×6</div>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2">
+            <div class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Wires</div>
+            <div id="wire-count-label" class="text-xs sm:text-sm font-black text-cyan-400">0/5</div>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800 rounded-xl p-2">
+            <div class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Coverage</div>
+            <div id="fill-label" class="text-xs sm:text-sm font-black text-emerald-400">0%</div>
+        </div>
+    </div>
+
+    <!-- Status & Victory Banner -->
+    <div id="status-banner" class="text-center text-xs font-bold py-2 px-3 rounded-xl bg-cyan-950/40 border border-cyan-800/40 text-cyan-300 transition-all">
+        Connect matching ports & fill 100% of the grid!
+    </div>
+
+    <!-- Interactive Grid Canvas -->
+    <div class="board-container relative w-full aspect-square bg-[#04070e] rounded-xl border-2 border-slate-800 overflow-hidden shadow-inner">
+        <canvas id="gameCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+    </div>
+
+    <!-- Controls & Action Buttons -->
+    <div class="grid grid-cols-2 gap-2">
+        <button id="reset-btn" class="bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 border border-slate-700 font-bold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer">
+            <span>🔄</span> Reset Board
+        </button>
+        <button id="solution-btn" class="bg-emerald-950/60 hover:bg-emerald-900/80 active:bg-emerald-950 text-emerald-400 border border-emerald-700/60 font-bold py-2 px-3 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer">
+            <span>💡</span> <span id="solution-btn-text">Show Solution</span>
+        </button>
+    </div>
+
+    <!-- Navigation Stepper -->
+    <div class="flex items-center justify-between gap-2 pt-0.5">
+        <button id="prev-lvl-btn" class="flex-1 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800 font-semibold py-1.5 px-3 rounded-lg text-xs transition cursor-pointer">
+            ← Previous
+        </button>
+        <span id="level-indicator" class="text-xs font-bold text-slate-400 px-2">Level 6</span>
+        <button id="next-lvl-btn" class="flex-1 bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800 font-semibold py-1.5 px-3 rounded-lg text-xs transition cursor-pointer">
+            Next →
+        </button>
+    </div>
+</div>
+
+<script>
+// High Quality Deterministic Seeded Random Number Generator
+function mulberry32(seed) {
+    return function() {
+        var t = seed += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 85, t | 8);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+
+// Neon Color Palette
+const COLOR_PALETTE = [
+    { name: 'Red', hex: '#ff3366', glow: 'rgba(255, 51, 102, 0.6)' },
+    { name: 'Blue', hex: '#3399ff', glow: 'rgba(51, 153, 255, 0.6)' },
+    { name: 'Green', hex: '#00ff88', glow: 'rgba(0, 255, 136, 0.6)' },
+    { name: 'Purple', hex: '#b833ff', glow: 'rgba(184, 51, 255, 0.6)' },
+    { name: 'Yellow', hex: '#ffcc00', glow: 'rgba(255, 204, 0, 0.6)' },
+    { name: 'Cyan', hex: '#00f0ff', glow: 'rgba(0, 240, 255, 0.6)' },
+    { name: 'Orange', hex: '#ff7700', glow: 'rgba(255, 119, 0, 0.6)' }
+];
+
+
+/**
+ * Generates a 100% space-filling path across a W x H grid using Warnsdorff's heuristic DFS
+ */
+function generateHamiltonianPath(width, height, rng) {
+    const totalCells = width * height;
+    const visited = new Array(totalCells).fill(false);
+    const path = [];
+
+    function getValidNeighbors(x, y) {
+        const neighbors = [];
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        for (let [dx, dy] of dirs) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                const idx = ny * width + nx;
+                if (!visited[idx]) {
+                    neighbors.push({ x: nx, y: ny, idx });
+                }
+            }
+        }
+        return neighbors;
+    }
+
+    function countUnvisitedNeighbors(x, y) {
+        return getValidNeighbors(x, y).length;
+    }
+
+    const startX = Math.floor(rng() * width);
+    const startY = Math.floor(rng() * height);
+
+    function dfs(x, y) {
+        const idx = y * width + x;
+        visited[idx] = true;
+        path.push({ x, y });
+
+        if (path.length === totalCells) return true;
+
+        let neighbors = getValidNeighbors(x, y);
+
+        neighbors.forEach(n => {
+            n.degree = countUnvisitedNeighbors(n.x, n.y);
+            n.rnd = rng();
+        });
+
+        neighbors.sort((a, b) => a.degree - b.degree || a.rnd - b.rnd);
+
+        for (let n of neighbors) {
+            if (dfs(n.x, n.y)) return true;
+        }
+
+        visited[idx] = false;
+        path.pop();
+        return false;
+    }
+
+    dfs(startX, startY);
+    return path;
+}
+
+/**
+ * Splits a single 100% Hamiltonian path into K distinct wire sub-paths
+ */
+function splitPathIntoWireSegments(path, numWires, rng) {
+    const totalLen = path.length;
+    const minSegLen = 2;
+
+    const candidateCuts = [];
+    for (let i = minSegLen; i <= totalLen - minSegLen; i++) {
+        candidateCuts.push(i);
+    }
+
+    for (let i = candidateCuts.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [candidateCuts[i], candidateCuts[j]] = [candidateCuts[j], candidateCuts[i]];
+    }
+
+    const selectedCuts = [];
+    for (let cut of candidateCuts) {
+        if (selectedCuts.length === numWires - 1) break;
+
+        let valid = true;
+        for (let existing of selectedCuts) {
+            if (Math.abs(existing - cut) < minSegLen) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) selectedCuts.push(cut);
+    }
+
+    selectedCuts.sort((a, b) => a - b);
+
+    const segments = [];
+    let prevIdx = 0;
+    for (let cut of selectedCuts) {
+        segments.push(path.slice(prevIdx, cut));
+        prevIdx = cut;
+    }
+    segments.push(path.slice(prevIdx));
+
+    return segments;
+}
+
+
+class LevelFactory {
+    static getLevel(levelNum) {
+        const seed = levelNum * 987654321 + 1234567;
+        const rng = mulberry32(seed);
+
+        let gridWidth = 5;
+        let gridHeight = 5;
+        let numWires = 4;
+
+        if (levelNum >= 4 && levelNum <= 8) {
+            gridWidth = 6; gridHeight = 6; numWires = 5;
+        } else if (levelNum >= 9 && levelNum <= 14) {
+            gridWidth = 7; gridHeight = 7; numWires = 6;
+        } else if (levelNum >= 15) {
+            gridWidth = 8; gridHeight = 8; numWires = 7;
+        }
+
+        const hamPath = generateHamiltonianPath(gridWidth, gridHeight, rng);
+        const solutionSegments = splitPathIntoWireSegments(hamPath, numWires, rng);
+
+        const terminals = [];
+        const solutionPaths = {};
+
+        solutionSegments.forEach((seg, idx) => {
+            const color = COLOR_PALETTE[idx % COLOR_PALETTE.length];
+            terminals.push({
+                colorId: idx,
+                colorName: color.name,
+                hex: color.hex,
+                glow: color.glow,
+                t1: { x: seg[0].x, y: seg[0].y },
+                t2: { x: seg[seg.length - 1].x, y: seg[seg.length - 1].y }
+            });
+            solutionPaths[idx] = seg;
+        });
+
+        return {
+            levelNum,
+            gridWidth,
+            gridHeight,
+            totalTiles: gridWidth * gridHeight,
+            terminals,
+            solutionPaths
+        };
+    }
+}
+
+
+class CircuitBreakerApp {
+    constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.levelSelect = document.getElementById('level-select');
+        this.statusBanner = document.getElementById('status-banner');
+        
+        this.fillLabel = document.getElementById('fill-label');
+        this.gridSizeLabel = document.getElementById('grid-size-label');
+        this.wireCountLabel = document.getElementById('wire-count-label');
+        this.solutionBtnText = document.getElementById('solution-btn-text');
+        this.levelIndicator = document.getElementById('level-indicator');
+
+        this.currentLevelNum = 6;
+        this.levelData = null;
+        this.userPaths = {};
+        this.activeColorId = null;
+        this.isDrawing = false;
+        this.showingSolution = false;
+        this.isVictory = false;
+
+        this.populateLevelSelector();
+        this.initEventListeners();
+        this.loadLevel(this.currentLevelNum);
+    }
+
+    populateLevelSelector() {
+        this.levelSelect.innerHTML = '';
+        for (let i = 1; i <= 20; i++) {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.innerText = i < 10 ? `0${i}` : `${i}`;
+            if (i === this.currentLevelNum) opt.selected = true;
+            this.levelSelect.appendChild(opt);
+        }
+    }
+
+    loadLevel(lvlNum) {
+        this.currentLevelNum = lvlNum;
+        this.levelSelect.value = lvlNum;
+        this.levelIndicator.innerText = `Level ${lvlNum}`;
+        this.levelData = LevelFactory.getLevel(lvlNum);
+
+        this.gridSizeLabel.innerText = `${this.levelData.gridWidth}×${this.levelData.gridHeight}`;
+        
+        this.showingSolution = false;
+        this.solutionBtnText.innerText = 'Show Solution';
+        this.isVictory = false;
+
+        this.resetUserPaths();
+        this.resizeCanvas();
+        this.updateStats();
+    }
+
+    resetUserPaths() {
+        this.userPaths = {};
+        this.levelData.terminals.forEach(t => {
+            this.userPaths[t.colorId] = [];
+        });
+        this.activeColorId = null;
+        this.isDrawing = false;
+        this.isVictory = false;
+        this.showingSolution = false;
+        this.solutionBtnText.innerText = 'Show Solution';
+        
+        this.statusBanner.className = 'text-center text-xs font-bold py-2 px-3 rounded-xl bg-cyan-950/40 border border-cyan-800/40 text-cyan-300 transition-all';
+        this.statusBanner.innerText = 'Connect matching ports & fill 100% of the grid!';
+
+        this.updateStats();
+        this.draw();
+    }
+
+    toggleSolution() {
+        this.showingSolution = !this.showingSolution;
+        if (this.showingSolution) {
+            this.userPaths = JSON.parse(JSON.stringify(this.levelData.solutionPaths));
+            this.solutionBtnText.innerText = 'Hide Solution';
+            this.checkVictoryCondition();
+        } else {
+            this.resetUserPaths();
+        }
+        this.draw();
+    }
+
+    resizeCanvas() {
+        const wrapper = this.canvas.parentElement;
+        const rect = wrapper.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+
+        this.canvas.width = rect.width * dpr;
+        this.canvas.height = rect.height * dpr;
+        this.ctx.scale(dpr, dpr);
+
+        this.cellSize = rect.width / this.levelData.gridWidth;
+        this.draw();
+    }
+
+    draw() {
+        const width = this.canvas.width / (window.devicePixelRatio || 1);
+        const height = this.canvas.height / (window.devicePixelRatio || 1);
+        const cs = this.cellSize;
+        const gw = this.levelData.gridWidth;
+        const gh = this.levelData.gridHeight;
+
+        this.ctx.clearRect(0, 0, width, height);
+
+        for (let x = 0; x < gw; x++) {
+            for (let y = 0; y < gh; y++) {
+                this.ctx.strokeStyle = '#0e182a';
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(x * cs, y * cs, cs, cs);
+            }
+        }
+
+        this.levelData.terminals.forEach(term => {
+            const path = this.userPaths[term.colorId];
+            if (path && path.length > 1) {
+                this.ctx.strokeStyle = term.hex;
+                this.ctx.lineWidth = cs * 0.36;
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                this.ctx.shadowColor = term.hex;
+                this.ctx.shadowBlur = 12;
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(path[0].x * cs + cs / 2, path[0].y * cs + cs / 2);
+                for (let i = 1; i < path.length; i++) {
+                    this.ctx.lineTo(path[i].x * cs + cs / 2, path[i].y * cs + cs / 2);
+                }
+                this.ctx.stroke();
+                this.ctx.shadowBlur = 0;
+            }
+        });
+
+        this.levelData.terminals.forEach(term => {
+            [term.t1, term.t2].forEach(p => {
+                const cx = p.x * cs + cs / 2;
+                const cy = p.y * cs + cs / 2;
+                const outerRadius = cs * 0.32;
+
+                this.ctx.fillStyle = term.hex;
+                this.ctx.shadowColor = term.hex;
+                this.ctx.shadowBlur = 10;
+                this.ctx.beginPath();
+                this.ctx.arc(cx, cy, outerRadius, 0, Math.PI * 2);
+                this.ctx.fill();
+
+                this.ctx.shadowBlur = 0;
+                this.ctx.fillStyle = '#04070e';
+                this.ctx.beginPath();
+                this.ctx.arc(cx, cy, outerRadius * 0.45, 0, Math.PI * 2);
+                this.ctx.fill();
+            });
+        });
+    }
+
+    getGridCellFromEvent(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        const x = Math.floor((clientX - rect.left) / this.cellSize);
+        const y = Math.floor((clientY - rect.top) / this.cellSize);
+
+        if (x >= 0 && x < this.levelData.gridWidth && y >= 0 && y < this.levelData.gridHeight) {
+            return { x, y };
+        }
+        return null;
+    }
+
+    onPointerDown(e) {
+        if (this.isVictory || this.showingSolution) return;
+        const pos = this.getGridCellFromEvent(e);
+        if (!pos) return;
+
+        const term = this.levelData.terminals.find(t => 
+            (t.t1.x === pos.x && t.t1.y === pos.y) || 
+            (t.t2.x === pos.x && t.t2.y === pos.y)
+        );
+
+        if (term) {
+            this.activeColorId = term.colorId;
+            this.isDrawing = true;
+            this.userPaths[term.colorId] = [{ x: pos.x, y: pos.y }];
+            this.draw();
+            this.updateStats();
+            return;
+        }
+
+        for (let t of this.levelData.terminals) {
+            const path = this.userPaths[t.colorId];
+            const idx = path.findIndex(pt => pt.x === pos.x && pt.y === pos.y);
+            if (idx !== -1) {
+                this.activeColorId = t.colorId;
+                this.isDrawing = true;
+                this.userPaths[t.colorId] = path.slice(0, idx + 1);
+                this.draw();
+                this.updateStats();
+                break;
+            }
+        }
+    }
+
+    onPointerMove(e) {
+        if (!this.isDrawing || this.activeColorId === null) return;
+        const pos = this.getGridCellFromEvent(e);
+        if (!pos) return;
+
+        const path = this.userPaths[this.activeColorId];
+        const last = path[path.length - 1];
+
+        if (pos.x === last.x && pos.y === last.y) return;
+
+        const dist = Math.abs(pos.x - last.x) + Math.abs(pos.y - last.y);
+        if (dist !== 1) return;
+
+        if (path.length > 1 && path[path.length - 2].x === pos.x && path[path.length - 2].y === pos.y) {
+            path.pop();
+            this.draw();
+            this.updateStats();
+            return;
+        }
+
+        for (let t of this.levelData.terminals) {
+            if (t.colorId !== this.activeColorId) {
+                if (this.userPaths[t.colorId].some(pt => pt.x === pos.x && pt.y === pos.y)) {
+                    return;
+                }
+            } else {
+                if (path.some(pt => pt.x === pos.x && pt.y === pos.y)) {
+                    return;
+                }
+            }
+        }
+
+        path.push(pos);
+        this.draw();
+        this.updateStats();
+
+        const term = this.levelData.terminals.find(t => t.colorId === this.activeColorId);
+        const isEndT1 = (pos.x === term.t1.x && pos.y === term.t1.y);
+        const isEndT2 = (pos.x === term.t2.x && pos.y === term.t2.y);
+
+        if (isEndT1 || isEndT2) {
+            this.isDrawing = false;
+            this.checkVictoryCondition();
+        }
+    }
+
+    onPointerUp() {
+        this.isDrawing = false;
+        this.activeColorId = null;
+        this.checkVictoryCondition();
+    }
+
+    updateStats() {
+        const uniqueCells = new Set();
+        let connectedWires = 0;
+
+        this.levelData.terminals.forEach(t => {
+            const path = this.userPaths[t.colorId] || [];
+            path.forEach(pt => uniqueCells.add(`${pt.x},${pt.y}`));
+
+            if (path.length >= 2) {
+                const head = path[0];
+                const tail = path[path.length - 1];
+                const matches1 = (head.x === t.t1.x && head.y === t.t1.y && tail.x === t.t2.x && tail.y === t.t2.y);
+                const matches2 = (head.x === t.t2.x && head.y === t.t2.y && tail.x === t.t1.x && tail.y === t.t1.y);
+                if (matches1 || matches2) connectedWires++;
+            }
+        });
+
+        const totalTiles = this.levelData.totalTiles;
+        const fillPct = Math.min(100, Math.round((uniqueCells.size / totalTiles) * 100));
+
+        this.fillLabel.innerText = `${fillPct}%`;
+        this.wireCountLabel.innerText = `${connectedWires}/${this.levelData.terminals.length}`;
+
+        return { fillPct, connectedWires, totalFilled: uniqueCells.size };
+    }
+
+    checkVictoryCondition() {
+        const { fillPct, connectedWires, totalFilled } = this.updateStats();
+
+        if (connectedWires === this.levelData.terminals.length && totalFilled === this.levelData.totalTiles) {
+            this.isVictory = true;
+            this.statusBanner.className = 'text-center text-xs font-bold py-2 px-3 rounded-xl bg-emerald-950/80 border border-emerald-500 text-emerald-300 victory-glow transition-all';
+            this.statusBanner.innerText = '⚡ PERFECT 100% PUZZLE SOLVED! ⚡';
+        }
+    }
+
+    initEventListeners() {
+        this.canvas.addEventListener('mousedown', e => this.onPointerDown(e));
+        this.canvas.addEventListener('mousemove', e => this.onPointerMove(e));
+        window.addEventListener('mouseup', () => this.onPointerUp());
+
+        this.canvas.addEventListener('touchstart', e => this.onPointerDown(e), { passive: true });
+        this.canvas.addEventListener('touchmove', e => this.onPointerMove(e), { passive: true });
+        window.addEventListener('touchend', () => this.onPointerUp());
+
+        document.getElementById('reset-btn').addEventListener('click', () => this.resetUserPaths());
+        document.getElementById('solution-btn').addEventListener('click', () => this.toggleSolution());
+
+        this.levelSelect.addEventListener('change', (e) => {
+            this.loadLevel(parseInt(e.target.value));
+        });
+
+        document.getElementById('prev-lvl-btn').addEventListener('click', () => {
+            if (this.currentLevelNum > 1) this.loadLevel(this.currentLevelNum - 1);
+        });
+        document.getElementById('next-lvl-btn').addEventListener('click', () => {
+            if (this.currentLevelNum < 20) this.loadLevel(this.currentLevelNum + 1);
+        });
+
+        const splashScreen = document.getElementById('splash-screen');
+        const rulesModal = document.getElementById('rules-modal');
+
+        const dismissSplash = (e) => {
+            if (e) e.stopPropagation();
+            if (splashScreen) splashScreen.style.display = 'none';
+            if (rulesModal) rulesModal.style.display = 'flex';
+        };
+
+        const startGame = (e) => {
+            if (e) e.stopPropagation();
+            if (rulesModal) rulesModal.style.display = 'none';
+            if (window.game) window.game.resizeCanvas();
+        };
+
+        if (splashScreen) {
+            splashScreen.addEventListener('click', dismissSplash);
+            splashScreen.addEventListener('touchend', dismissSplash);
+        }
+
+        const startBtn = document.getElementById('modal-start-btn');
+        const infoBtn = document.getElementById('info-btn');
+        const closeXBtn = document.getElementById('modal-close-x');
+
+        if (startBtn) {
+            startBtn.addEventListener('click', startGame);
+            startBtn.addEventListener('touchend', startGame);
+        }
+
+        if (closeXBtn) {
+            closeXBtn.addEventListener('click', startGame);
+            closeXBtn.addEventListener('touchend', startGame);
+        }
+
+        if (infoBtn) {
+            infoBtn.addEventListener('click', () => rulesModal.style.display = 'flex');
+        }
+
+        window.addEventListener('resize', () => {
+            if (window.game) window.game.resizeCanvas();
+        });
+    }
+}
+
+window.onload = () => {
+    window.game = new CircuitBreakerApp();
+};
+</script>
+</body>
+</html>
